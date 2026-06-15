@@ -16,15 +16,31 @@ app.use(express.json());
 // In-memory store for proposals submitted via the contact form
 const proposalsDb: any[] = [];
 
-// Initialize Gemini Client
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
+// Request Logging Middleware for tracking and debugging requests
+app.use((req, res, next) => {
+  console.log(`[HTTP MASTER LOG] ${req.method} ${req.url} - IP: ${req.ip} - Time: ${new Date().toISOString()}`);
+  next();
 });
+
+// Lazy-initialized Gemini Client to prevent crash if key is undefined at startup
+let aiClient: GoogleGenAI | null = null;
+function getGenAI(): GoogleGenAI {
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("WARNING: GEMINI_API_KEY is not defined in environments. Fetching with blank initializer.");
+    }
+    aiClient = new GoogleGenAI({
+      apiKey: apiKey || "MISSING_KEY",
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  }
+  return aiClient;
+}
 
 // API endpoint to generate bespoke business strategy blueprint with Gemini
 app.post("/api/blueprint", async (req: Request, res: Response): Promise<void> => {
@@ -45,7 +61,7 @@ Company Name: "${businessName}"
 Industry/Category: "${businessCategory}"
 Business Description/Focus: "${description || "A standard quality business seeking high online visibility and client conversions."}"`;
 
-    const response = await ai.models.generateContent({
+    const response = await getGenAI().models.generateContent({
       model: "gemini-3.5-flash",
       contents: userPrompt,
       config: {
